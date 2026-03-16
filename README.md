@@ -1,5 +1,9 @@
 # go-featureflag
 
+[![CI](https://github.com/philiprehberger/go-featureflag/actions/workflows/ci.yml/badge.svg)](https://github.com/philiprehberger/go-featureflag/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/philiprehberger/go-featureflag.svg)](https://pkg.go.dev/github.com/philiprehberger/go-featureflag)
+[![License](https://img.shields.io/github/license/philiprehberger/go-featureflag)](LICENSE)
+
 Lightweight feature flags for Go with simple on/off toggles, percentage-based rollouts, and flexible loading from JSON or environment variables. Zero external dependencies, fully thread-safe.
 
 ## Installation
@@ -76,6 +80,13 @@ flags := featureflag.FromEnv("MYAPP")
 | `FromEnv(prefix)` | Load flags from environment variables |
 | `FromJSON(reader)` | Load flags from JSON |
 | `MergeJSON(reader)` | Merge JSON flags into existing collection |
+
+## Development
+
+```bash
+go test ./...
+go vet ./...
+```
 
 ## License
 
