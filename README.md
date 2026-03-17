@@ -4,7 +4,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/philiprehberger/go-featureflag.svg)](https://pkg.go.dev/github.com/philiprehberger/go-featureflag)
 [![License](https://img.shields.io/github/license/philiprehberger/go-featureflag)](LICENSE)
 
-Lightweight feature flags for Go with simple on/off toggles, percentage-based rollouts, and flexible loading from JSON or environment variables. Zero external dependencies, fully thread-safe.
+Lightweight feature flags for Go with simple on/off toggles, percentage-based rollouts, user/role targeting, A/B variant selection, and flexible loading from JSON or environment variables. Zero external dependencies, fully thread-safe.
 
 ## Installation
 
@@ -39,6 +39,57 @@ if flags.EnabledFor("new_checkout", userID) {
 }
 ```
 
+### Role & User Targeting
+
+```go
+flags.SetConfig("beta_feature", featureflag.FlagConfig{
+    Enabled:      false,
+    AllowedUsers: []string{"alice", "bob"},
+    AllowedRoles: []string{"admin", "staff"},
+})
+
+ctx := featureflag.FeatureFlagContext{
+    UserID: "alice",
+    Roles:  []string{"viewer"},
+}
+
+flags.EnabledForContext("beta_feature", ctx) // true (alice is in AllowedUsers)
+```
+
+### A/B Variants
+
+```go
+flags.SetConfig("checkout_experiment", featureflag.FlagConfig{
+    Enabled:  true,
+    Variants: []string{"control", "variant_a", "variant_b"},
+})
+
+variant := flags.GetVariant("checkout_experiment", userID)
+// Returns a consistent variant per user using FNV-32 hashing
+```
+
+### Context-Based Evaluation
+
+```go
+flags.SetConfig("gradual_rollout", featureflag.FlagConfig{
+    Enabled:      false,
+    Percentage:   0.25,
+    AllowedUsers: []string{"vip_user"},
+    AllowedRoles: []string{"beta_tester"},
+})
+
+ctx := featureflag.FeatureFlagContext{
+    UserID: "some_user",
+    Roles:  []string{"beta_tester"},
+    Properties: map[string]string{
+        "region": "eu-west",
+    },
+}
+
+// Evaluation order: AllowedUsers -> AllowedRoles -> Percentage -> Enabled
+flags.EnabledForContext("gradual_rollout", ctx) // true (role matches)
+```
+
 ### Load from JSON
 
 ```go
@@ -68,13 +119,18 @@ flags := featureflag.FromEnv("MYAPP")
 | Function / Type | Description |
 |-----------------|-------------|
 | `Flag` | Struct with `Enabled bool` and `Percentage float64` fields |
+| `FlagConfig` | Extended config with `Enabled`, `Percentage`, `AllowedUsers`, `AllowedRoles`, `Variants` |
+| `FeatureFlagContext` | Evaluation context with `UserID`, `Roles`, `Properties` |
 | `Flags` | Thread-safe collection of feature flags |
 | `New()` | Create a new empty Flags collection |
 | `Set(name, enabled)` | Set a simple on/off flag |
 | `SetPercentage(name, pct)` | Set a percentage rollout flag (0.0 to 1.0, clamped) |
+| `SetConfig(name, config)` | Set a flag with full targeting rules |
 | `Enabled(name)` | Check if a flag is enabled (returns false for unknown) |
 | `EnabledFor(name, userID)` | Deterministic per-user check using FNV-32 hashing |
-| `Remove(name)` | Remove a flag |
+| `EnabledForContext(name, ctx)` | Context-aware evaluation (users, roles, percentage, enabled) |
+| `GetVariant(name, userID)` | Consistent A/B variant selection using FNV-32 hashing |
+| `Remove(name)` | Remove a flag (including config) |
 | `All()` | Return a copy of all flags |
 | `Size()` | Return the number of flags |
 | `FromEnv(prefix)` | Load flags from environment variables |

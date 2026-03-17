@@ -14,16 +14,34 @@ type Flag struct {
 	Percentage float64
 }
 
+// FlagConfig holds the full configuration for a feature flag including targeting rules.
+type FlagConfig struct {
+	Enabled      bool
+	Percentage   float64
+	AllowedUsers []string
+	AllowedRoles []string
+	Variants     []string
+}
+
+// FeatureFlagContext provides rich context for flag evaluation.
+type FeatureFlagContext struct {
+	UserID     string
+	Roles      []string
+	Properties map[string]string
+}
+
 // Flags is a thread-safe collection of feature flags.
 type Flags struct {
-	mu    sync.RWMutex
-	flags map[string]Flag
+	mu      sync.RWMutex
+	flags   map[string]Flag
+	configs map[string]FlagConfig
 }
 
 // New creates a new empty Flags collection.
 func New() *Flags {
 	return &Flags{
-		flags: make(map[string]Flag),
+		flags:   make(map[string]Flag),
+		configs: make(map[string]FlagConfig),
 	}
 }
 
@@ -75,10 +93,90 @@ func (f *Flags) EnabledFor(name string, userID string) bool {
 	if flag.Percentage == 0 {
 		return flag.Enabled
 	}
+	return hashCheck(userID+name, flag.Percentage)
+}
+
+// SetConfig configures a flag with targeting rules.
+func (f *Flags) SetConfig(name string, config FlagConfig) {
+	if config.Percentage < 0 {
+		config.Percentage = 0
+	}
+	if config.Percentage > 1 {
+		config.Percentage = 1
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.configs[name] = config
+	f.flags[name] = Flag{Enabled: config.Enabled, Percentage: config.Percentage}
+}
+
+// EnabledForContext evaluates a flag against a full context (user, roles, percentage).
+// Check order: AllowedUsers first (always true if user matches), then AllowedRoles
+// (true if any role matches), then percentage rollout, then basic enabled flag.
+// Returns false for unknown flags.
+func (f *Flags) EnabledForContext(name string, ctx FeatureFlagContext) bool {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	config, hasConfig := f.configs[name]
+	if !hasConfig {
+		// Fall back to basic flag evaluation.
+		flag, ok := f.flags[name]
+		if !ok {
+			return false
+		}
+		if flag.Percentage > 0 {
+			return hashCheck(ctx.UserID+name, flag.Percentage)
+		}
+		return flag.Enabled
+	}
+
+	// Check AllowedUsers.
+	for _, u := range config.AllowedUsers {
+		if u == ctx.UserID {
+			return true
+		}
+	}
+
+	// Check AllowedRoles.
+	if len(config.AllowedRoles) > 0 {
+		for _, allowed := range config.AllowedRoles {
+			for _, role := range ctx.Roles {
+				if allowed == role {
+					return true
+				}
+			}
+		}
+	}
+
+	// Check percentage rollout.
+	if config.Percentage > 0 {
+		return hashCheck(ctx.UserID+name, config.Percentage)
+	}
+
+	return config.Enabled
+}
+
+// GetVariant returns a consistent variant for the user based on hashing.
+// If no variants are configured for the flag, it returns an empty string.
+func (f *Flags) GetVariant(name string, userID string) string {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	config, ok := f.configs[name]
+	if !ok || len(config.Variants) == 0 {
+		return ""
+	}
 	h := fnv.New32a()
 	h.Write([]byte(userID + name))
-	hash := h.Sum32()
-	return hash%1000 < uint32(flag.Percentage*1000)
+	idx := int(h.Sum32()) % len(config.Variants)
+	return config.Variants[idx]
+}
+
+// hashCheck returns true if the FNV-32a hash of key falls within the given percentage.
+func hashCheck(key string, pct float64) bool {
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	return h.Sum32()%1000 < uint32(pct*1000)
 }
 
 // Remove removes a flag by name. No-op if the flag does not exist.
@@ -86,6 +184,7 @@ func (f *Flags) Remove(name string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	delete(f.flags, name)
+	delete(f.configs, name)
 }
 
 // All returns a copy of all flags.
