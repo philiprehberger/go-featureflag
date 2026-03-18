@@ -4,7 +4,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/philiprehberger/go-featureflag.svg)](https://pkg.go.dev/github.com/philiprehberger/go-featureflag)
 [![License](https://img.shields.io/github/license/philiprehberger/go-featureflag)](LICENSE)
 
-Lightweight feature flags for Go with simple on/off toggles, percentage-based rollouts, user/role targeting, A/B variant selection, and flexible loading from JSON or environment variables. Zero external dependencies, fully thread-safe.
+Lightweight feature flags for Go with toggles, percentage rollouts, user targeting, and A/B variants
 
 ## Installation
 
